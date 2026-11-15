@@ -1,0 +1,35 @@
+name: Lodestone engine
+
+# Builds the engine on GitHub's own Mac machines (upstream builds on a machine of its own).
+on:
+  push:
+    branches: [lodestone]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 8
+
+      - name: Tools
+        run: brew install make ldid lld coreutils
+
+      - name: Build
+        run: |
+          export PATH="$(brew --prefix lld)/bin:$(brew --prefix)/bin:$PATH"
+          gmake -j"$(sysctl -n hw.ncpu)" package PLATFORM=2 SLIMMED=1 BOOTJDK="$JAVA_HOME/bin"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lodestone-engine-ios
+          path: artifacts/*.ipa
+          if-no-files-found: error
