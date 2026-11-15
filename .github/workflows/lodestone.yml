@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: macos-15
+    env:
+      BOOTJDK_NOTE: zulu 8
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -26,10 +28,10 @@ jobs:
       - name: Build
         run: |
           export PATH="$(brew --prefix lld)/bin:$(brew --prefix)/bin:$PATH"
-          # One step after another, as the Makefile's "all" has them (its targets don't name what they need).
-          for step in native java jre assets payload package; do
-            gmake "$step" PLATFORM=2 SLIMMED=1 BOOTJDK="$JAVA_HOME/bin"
-          done
+          # As upstream's staging build does: the Xcode project builds the app, the Makefile packages it.
+          xcodebuild archive -archivePath artifacts/ios -scheme AngelAuraAmethyst -config Debug             AD_HOC_CODE_SIGNING_ALLOWED=1 CODE_SIGN_IDENTITY= BOOTJDK="$JAVA_HOME/bin" | tail -150
+          cd artifacts && rm -rf Payload && ln -s ios.xcarchive/Products/Applications Payload && cd ..
+          gmake package SLIMMED=1 BOOTJDK="$JAVA_HOME/bin"
 
       - uses: actions/upload-artifact@v4
         with:
