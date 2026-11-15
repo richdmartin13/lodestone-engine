@@ -8,9 +8,8 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
-    env:
-      BOOTJDK_NOTE: zulu 8
+    # The iOS 26 SDK: the launcher uses its UIKit.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +26,7 @@ jobs:
 
       - name: Build
         run: |
+          set -o pipefail
           export PATH="$(brew --prefix lld)/bin:$(brew --prefix)/bin:$PATH"
           # As upstream's staging build does: the Xcode project builds the app, the Makefile packages it.
           xcodebuild archive -archivePath artifacts/ios -scheme AngelAuraAmethyst -config Debug             AD_HOC_CODE_SIGNING_ALLOWED=1 CODE_SIGN_IDENTITY= BOOTJDK="$JAVA_HOME/bin" | tail -150
