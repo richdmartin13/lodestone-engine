@@ -33,7 +33,9 @@ static void *lodestone_dlsym(void *handle, const char *symbol) {
     if (symbol && strcmp(symbol, "main") == 0 && lodestoneLaunched) {
         return (void *)&main;
     }
-    return lodestone_orig_dlsym(handle, symbol);
+    // A tail call: dlsym answers RTLD_NEXT and RTLD_DEFAULT by who called it (MobileGlues finds EGL
+    // among the libraries it links), and that must stay the caller, not this library.
+    __attribute__((musttail)) return lodestone_orig_dlsym(handle, symbol);
 }
 
 static NSString *lodestoneDocuments(void) {
