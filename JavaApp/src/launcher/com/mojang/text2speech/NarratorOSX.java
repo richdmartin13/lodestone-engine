@@ -38,7 +38,8 @@ public class NarratorOSX implements Narrator {
     }
     
     static {
-        System.load(System.getenv("BUNDLE_PATH") + "/AngelAuraAmethyst");
+        // In Lodestone the engine is a library inside a Sandbox app, which says where (LODESTONE_ENGINE).
+            System.load(System.getenv("LODESTONE_ENGINE") != null ? System.getenv("LODESTONE_ENGINE") : System.getenv("BUNDLE_PATH") + "/AngelAuraAmethyst");
     }
 
     private static native void nativeStartSpeaking(String msg, float volume);

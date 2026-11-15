@@ -11,7 +11,11 @@
 // Included at the end of main.m (it is part of that file, for its start-up functions).
 
 #import <objc/message.h>
+#include <dlfcn.h>
 #include "external/fishhook/fishhook.h"
+#import "authenticator/BaseAuthenticator.h"
+#import "ios_uikit_bridge.h"
+#import "MinecraftResourceDownloadTask.h"
 
 typedef void (^LodestoneReply)(BOOL ok, NSString *json);
 typedef void (^LodestoneHandler)(NSString *call, NSString *context, NSString *args, LodestoneReply reply);
@@ -20,6 +24,7 @@ extern __weak UIWindow *mainWindow;
 void launchInitialViewController(UIWindow *window);
 
 static BOOL lodestoneLaunched;
+static MinecraftResourceDownloadTask *lodestoneTask;
 
 // libjli starts Java on a thread of its own by calling the program's `main` again, which it looks
 // up by name: in a Sandbox app that would be the Sandbox shell's. It is given this one.
@@ -172,12 +177,48 @@ static NSString *lodestoneLaunch(NSString *profileName, NSDictionary *profiles) 
     if (profileName.length && !profiles[profileName]) return [NSString stringWithFormat:@"There is no instance named %@.", profileName];
     lodestoneLaunched = YES;
     rebind_symbols((struct rebinding[1]){{"dlsym", lodestone_dlsym, (void *)&lodestone_orig_dlsym}}, 1);
+    // The game's Java side loads this library by its file (it holds the JNI functions): where it is.
+    Dl_info engine;
+    if (dladdr((void *)&lodestone_dlsym, &engine) && engine.dli_fname) setenv("LODESTONE_ENGINE", engine.dli_fname, 1);
     lodestone_preinit(NSBundle.mainBundle.executablePath.fileSystemRepresentation);
     if (profileName.length) PLProfiles.current.selectedProfileName = profileName;
     mainWindow = window;
-    launchInitialViewController(window);
-    [window makeKeyAndVisible];
-    lodestonePressPlay(window, 50);
+
+    // Straight to the game, the launcher (the Sandbox app) staying on screen meanwhile: what the
+    // engine's own Play does, without its screens. That needs an account and a version already on
+    // the device; without them the engine's launcher is shown, which can sign in and download.
+    NSString *versionId = profiles[PLProfiles.current.selectedProfileName][@"lastVersionId"];
+    NSString *versionFile = versionId.length == 0 ? nil : [NSString stringWithFormat:@"%s/versions/%@/%@.json", getenv("POJAV_GAME_DIR") ?: "", versionId, versionId];
+    if (BaseAuthenticator.current == nil || !versionFile || ![NSFileManager.defaultManager fileExistsAtPath:versionFile]) {
+        NSLog(@"[Lodestone] no account or no version %@ here: the engine's launcher", versionId);
+        launchInitialViewController(window);
+        [window makeKeyAndVisible];
+        lodestonePressPlay(window, 50);
+        return nil;
+    }
+    lodestoneTask = [MinecraftResourceDownloadTask new];
+    __block BOOL failed = NO;
+    lodestoneTask.handleError = ^{ failed = YES; };
+    UIApplication.sharedApplication.idleTimerDisabled = YES;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSLog(@"[Lodestone] checking the files of %@", versionId);
+        [lodestoneTask downloadVersion:@{@"id": versionId, @"type": @"custom"}];
+        while (!failed && !(lodestoneTask.metadata && lodestoneTask.progress.fractionCompleted >= 1.0)) usleep(200 * 1000);
+        if (failed) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSLog(@"[Lodestone] the version's files could not be fetched: the engine's launcher");
+                launchInitialViewController(window);
+                [window makeKeyAndVisible];
+            });
+            return;
+        }
+        while (!isJITEnabled(false)) usleep(200 * 1000);
+        NSDictionary *metadata = lodestoneTask.metadata;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSLog(@"[Lodestone] starting the game");
+            UIKit_launchMinecraftSurfaceVC(window, metadata);
+        });
+    });
     return nil;
 }
 
