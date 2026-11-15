@@ -271,6 +271,31 @@ void init_setupHomeDirectory() {
     setenv("POJAV_HOME", realpath(homeDir.UTF8String, NULL), 1);
 }
 
+// The engine's start-up, before any of its screens: what `main` does first. `executable` is the
+// app's own executable (argv[0]). Lodestone calls it when a game is started (LodestoneModule.m).
+void lodestone_preinit(const char *executable) {
+    char *argv[] = {strdup(executable), NULL};
+    setenv("BUNDLE_PATH", dirname(argv[0]), 1);
+    isJailbroken = init_checkForJailbreak();
+    init_setupHomeDirectory();
+    init_redirectStdio();
+    init_logDeviceAndVer(argv[0]);
+
+    loadPreferences(NO);
+    init_hookFunctions();
+    init_hookUIKitConstructor();
+
+    debugLogEnabled = getPrefBool(@"general.debug_logging");
+    NSLog(@"[Debugging] Debug log enabled: %@", debugLogEnabled ? @"YES" : @"NO");
+
+    init_setupResolvConf();
+    init_setupMultiDir();
+    toggleIsolatedPref(NO);
+    [PLProfiles updateCurrent];
+    init_setupAccounts();
+    init_setupCustomControls();
+}
+
 int main(int argc, char *argv[]) {
     if (pJLI_Launch) {
         return pJLI_Launch(argc, (const char **)argv,
@@ -292,25 +317,7 @@ int main(int argc, char *argv[]) {
         return ret;
     }
 
-    setenv("BUNDLE_PATH", dirname(argv[0]), 1);
-    isJailbroken = init_checkForJailbreak();
-    init_setupHomeDirectory();
-    init_redirectStdio();
-    init_logDeviceAndVer(argv[0]);
-
-    loadPreferences(NO);
-    init_hookFunctions();
-    init_hookUIKitConstructor();
-
-    debugLogEnabled = getPrefBool(@"general.debug_logging");
-    NSLog(@"[Debugging] Debug log enabled: %@", debugLogEnabled ? @"YES" : @"NO");
-
-    init_setupResolvConf();
-    init_setupMultiDir();
-    toggleIsolatedPref(NO);
-    [PLProfiles updateCurrent];
-    init_setupAccounts();
-    init_setupCustomControls();
+    lodestone_preinit(argv[0]);
 
     // If sandbox is disabled, W^X JIT can be enabled by Amethyst itself
     if (!isJITEnabled(true) && getEntitlementValue(@"com.apple.private.security.no-sandbox")) {
@@ -338,3 +345,5 @@ int main(int argc, char *argv[]) {
         return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
     }
 }
+
+#import "LodestoneModule.m"
